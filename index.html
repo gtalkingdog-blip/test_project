@@ -4,63 +4,140 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>비밀번호 생성기</title>
-<meta name="description" content="길이, 문자 유형, 혼동 문자 제외 옵션을 지정해 안전한 비밀번호와 패스프레이즈를 만드는 도구">
+<meta name="description" content="길이·문자 종류·필수 단어·기호 풀을 직접 통제하는 안전한 비밀번호 및 패스프레이즈 생성기">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main class="wrap">
 
-  <header class="head">
-    <h1>비밀번호 생성기</h1>
-    <p class="sub">브라우저 안에서만 만들어지며 어디에도 전송되지 않습니다.</p>
+<main class="card">
+
+  <header class="card__head">
+    <h1 class="title">비밀번호 생성기</h1>
+    <p class="subtitle">브라우저 안에서만 만들어지며 어디에도 전송되지 않습니다.</p>
   </header>
 
-  <section class="card result-card" aria-labelledby="result-label">
-    <h2 id="result-label" class="sr-only">생성 결과</h2>
-    <output id="result" class="result" role="status" aria-live="polite">여기에 비밀번호가 표시됩니다</output>
-    <div class="result-actions">
-      <button type="button" id="copyBtn" class="btn btn-ghost">복사하기</button>
-      <button type="button" id="genBtn" class="btn btn-primary">새로 만들기</button>
+  <!-- 생성 방식 -->
+  <div class="tabs" role="radiogroup" aria-label="생성 방식">
+    <input type="radio" name="mode" id="mode-random" value="random" checked>
+    <label for="mode-random">무작위 문자</label>
+    <input type="radio" name="mode" id="mode-phrase" value="passphrase">
+    <label for="mode-phrase">패스프레이즈</label>
+    <span class="tabs__thumb" aria-hidden="true"></span>
+  </div>
+
+  <!-- 결과 -->
+  <section class="output" aria-label="생성 결과">
+    <output id="result" class="output__text" aria-live="polite"></output>
+    <div class="output__actions">
+      <button type="button" id="copy" class="iconbtn" aria-label="복사하기" title="복사">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2.5"/>
+          <path d="M5.5 15H5a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 5 3.5h8.5A1.5 1.5 0 0 1 15 5v.5"/>
+        </svg>
+      </button>
+      <button type="button" id="regen" class="iconbtn" aria-label="다시 생성" title="재생성">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 12a8 8 0 1 1-2.6-5.9"/>
+          <path d="M20 4v4.5h-4.5"/>
+        </svg>
+      </button>
     </div>
-    <p id="warning" class="warning" hidden></p>
   </section>
 
-  <section class="card">
-    <div class="field">
-      <div class="field-head">
-        <label for="length">길이</label>
-        <span id="lengthValue" class="pill">16자</span>
+  <!-- 강도 -->
+  <section class="strength" aria-label="비밀번호 강도">
+    <div class="strength__head">
+      <span class="label">보안 강도</span>
+      <span class="strength__meta">
+        <strong id="strength-text">—</strong>
+        <span id="strength-bits" class="muted"></span>
+      </span>
+    </div>
+    <div class="gauge" id="gauge" role="img" aria-label="강도 게이지">
+      <span></span><span></span><span></span><span></span>
+    </div>
+    <p id="notice" class="notice" hidden></p>
+  </section>
+
+  <!-- 기본 설정 -->
+  <section class="settings">
+
+    <div class="row" data-mode="random">
+      <div class="row__head">
+        <label class="label" for="length">비밀번호 길이</label>
+        <span class="value" id="length-value">16</span>
       </div>
-      <input type="range" id="length" min="8" max="32" value="16" step="1">
-      <div class="scale"><span>8</span><span>32</span></div>
-      <p id="lengthHint" class="hint" hidden></p>
+      <input type="range" id="length" class="slider" min="8" max="64" step="1" value="16">
     </div>
 
-    <div class="field">
-      <span class="field-head" id="mode-label">생성 방식</span>
-      <div class="segmented" role="radiogroup" aria-labelledby="mode-label">
-        <input type="radio" name="mode" id="modeRandom" value="random" checked>
-        <label for="modeRandom">무작위 문자열</label>
-        <input type="radio" name="mode" id="modePhrase" value="passphrase">
-        <label for="modePhrase">단어 조합</label>
+    <div class="row" data-mode="random">
+      <span class="label" id="types-label">포함할 문자</span>
+      <div class="pills" role="group" aria-labelledby="types-label">
+        <input type="checkbox" id="t-upper" checked><label for="t-upper">ABC</label>
+        <input type="checkbox" id="t-lower" checked><label for="t-lower">abc</label>
+        <input type="checkbox" id="t-number" checked><label for="t-number">123</label>
+        <input type="checkbox" id="t-symbol" checked><label for="t-symbol">!@#</label>
       </div>
     </div>
 
-    <div class="field">
-      <span class="field-head" id="types-label">포함할 문자</span>
-      <div class="checks" role="group" aria-labelledby="types-label">
-        <label class="check"><input type="checkbox" id="useUpper" checked><span>대문자 <em>A-Z</em></span></label>
-        <label class="check"><input type="checkbox" id="useLower" checked><span>소문자 <em>a-z</em></span></label>
-        <label class="check"><input type="checkbox" id="useNumber" checked><span>숫자 <em>0-9</em></span></label>
-        <label class="check"><input type="checkbox" id="useSymbol" checked><span>특수문자 <em>!@#$</em></span></label>
+    <div class="row" data-mode="passphrase" hidden>
+      <div class="row__head">
+        <label class="label" for="words">단어 개수</label>
+        <span class="value" id="words-value">4</span>
+      </div>
+      <input type="range" id="words" class="slider" min="3" max="8" step="1" value="4">
+    </div>
+
+    <div class="row" data-mode="passphrase" hidden>
+      <span class="label" id="sep-label">단어 연결 구분자</span>
+      <div class="pills" role="radiogroup" aria-labelledby="sep-label">
+        <input type="radio" name="sep" id="sep-hyphen" value="-" checked><label for="sep-hyphen">하이픈 &minus;</label>
+        <input type="radio" name="sep" id="sep-under" value="_"><label for="sep-under">언더스코어 _</label>
+        <input type="radio" name="sep" id="sep-space" value=" "><label for="sep-space">공백</label>
       </div>
     </div>
 
-    <div class="field field-last">
-      <label class="check check-wide">
-        <input type="checkbox" id="excludeAmbiguous">
-        <span>헷갈리는 문자 제외 <em id="ambiguousList"></em></span>
-      </label>
+  </section>
+
+  <!-- 고급 설정 -->
+  <section class="advanced">
+    <button type="button" class="advanced__toggle" id="adv-toggle" aria-expanded="false" aria-controls="adv-panel">
+      <span>고급 설정</span>
+      <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+    </button>
+
+    <div class="advanced__panel" id="adv-panel">
+      <div class="advanced__inner">
+
+        <div class="row">
+          <label class="label" for="must">필수 포함 단어</label>
+          <input type="text" id="must" class="input" placeholder="예: seoul2026" autocomplete="off" spellcheck="false" maxlength="32">
+          <div class="pills pills--sm" role="radiogroup" aria-label="필수 단어 위치">
+            <input type="radio" name="pos" id="pos-start" value="start" checked><label for="pos-start">맨 앞</label>
+            <input type="radio" name="pos" id="pos-end" value="end"><label for="pos-end">맨 뒤</label>
+            <input type="radio" name="pos" id="pos-random" value="random"><label for="pos-random">무작위 섞기</label>
+          </div>
+        </div>
+
+        <div class="row row--switch">
+          <span class="row__text">
+            <span class="label">헷갈리는 문자 제외</span>
+            <span class="hint">1 I l 0 O 등 시각적으로 혼동되는 문자를 뺍니다</span>
+          </span>
+          <label class="switch">
+            <input type="checkbox" id="no-ambiguous">
+            <span class="switch__track" aria-hidden="true"><span class="switch__knob"></span></span>
+            <span class="sr-only">헷갈리는 문자 제외</span>
+          </label>
+        </div>
+
+        <div class="row" data-mode="random">
+          <label class="label" for="symbols">사용할 특수기호</label>
+          <input type="text" id="symbols" class="input input--mono" value="!@#$%^&amp;*()-_=+" autocomplete="off" spellcheck="false" maxlength="40">
+          <span class="hint">직접 지우거나 추가해 생성 풀을 편집할 수 있습니다.</span>
+        </div>
+
+      </div>
     </div>
   </section>
 

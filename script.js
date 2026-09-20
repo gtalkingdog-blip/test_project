@@ -1,295 +1,398 @@
+/* =========================================================
+   비밀번호 생성기
+   - crypto.getRandomValues 기반 (모듈로 편향 제거)
+   - 무작위 문자 모드 / 패스프레이즈 모드
+   ========================================================= */
 (function () {
   'use strict';
 
-  /* ---------- 문자 집합 ---------- */
-  var CHARSETS = {
+  /* ---------- 상수 ---------- */
+  var CHARSET = {
     upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
     lower: 'abcdefghijklmnopqrstuvwxyz',
-    number: '0123456789',
-    symbol: '!@#$%^&*()-_=+[]{};:,.?/~'
+    number: '0123456789'
   };
 
-  // 시각적으로 혼동하기 쉬운 문자들
-  var AMBIGUOUS = 'O0oIl1LS5Z2B8';
+  // 시각적으로 혼동되는 문자
+  var AMBIGUOUS = '0O1Il|';
 
-  // 패스프레이즈용 짧은 영단어 50개
+  // 패스프레이즈용 영단어 (128개 = 단어당 7비트)
   var WORDS = [
-    'apple', 'beach', 'bird', 'blue', 'boat', 'book', 'bread', 'cake', 'cat', 'chair',
-    'cloud', 'coin', 'cook', 'corn', 'desk', 'dog', 'door', 'duck', 'farm', 'fire',
-    'fish', 'flag', 'frog', 'game', 'gold', 'green', 'hand', 'hat', 'house', 'ice',
-    'king', 'lamp', 'leaf', 'lion', 'milk', 'moon', 'nest', 'nose', 'pen', 'pink',
-    'rain', 'river', 'road', 'rock', 'salt', 'ship', 'snow', 'star', 'tree', 'wind'
+    'able', 'acid', 'aged', 'also', 'arch', 'army', 'atom', 'aunt',
+    'axis', 'baby', 'back', 'bake', 'bald', 'band', 'bank', 'barn',
+    'base', 'bath', 'bead', 'beam', 'bean', 'bear', 'beat', 'bell',
+    'belt', 'bend', 'best', 'bike', 'bird', 'blue', 'boat', 'bold',
+    'bolt', 'bone', 'book', 'boot', 'born', 'boss', 'both', 'bowl',
+    'brave', 'bread', 'brick', 'brush', 'cake', 'calm', 'camp', 'cane',
+    'card', 'care', 'cart', 'case', 'cave', 'cell', 'chain', 'chair',
+    'chalk', 'charm', 'chess', 'chief', 'city', 'claw', 'clay', 'cliff',
+    'climb', 'clock', 'cloud', 'coal', 'coast', 'coin', 'cold', 'cook',
+    'cool', 'copy', 'coral', 'corn', 'crane', 'cream', 'crisp', 'crown',
+    'cube', 'curve', 'dance', 'dawn', 'deer', 'dense', 'desk', 'diver',
+    'dock', 'dome', 'door', 'draft', 'dream', 'drift', 'drum', 'dune',
+    'dusk', 'eagle', 'earth', 'east', 'echo', 'edge', 'fern', 'field',
+    'flame', 'flint', 'flock', 'flour', 'foam', 'forest', 'fox', 'frame',
+    'frost', 'giant', 'glass', 'globe', 'glow', 'grain', 'grape', 'grass',
+    'grove', 'hail', 'harbor', 'hawk', 'hazel', 'heart', 'hill', 'honey'
+  ];
+
+  var LEVELS = [
+    { min: 0, name: '취약', level: 1 },
+    { min: 40, name: '보통', level: 2 },
+    { min: 60, name: '안전', level: 3 },
+    { min: 80, name: '매우 안전', level: 4 }
   ];
 
   /* ---------- DOM ---------- */
-  var el = {
-    result: document.getElementById('result'),
-    warning: document.getElementById('warning'),
-    copyBtn: document.getElementById('copyBtn'),
-    genBtn: document.getElementById('genBtn'),
-    length: document.getElementById('length'),
-    lengthValue: document.getElementById('lengthValue'),
-    lengthHint: document.getElementById('lengthHint'),
-    upper: document.getElementById('useUpper'),
-    lower: document.getElementById('useLower'),
-    number: document.getElementById('useNumber'),
-    symbol: document.getElementById('useSymbol'),
-    exclude: document.getElementById('excludeAmbiguous'),
-    ambiguousList: document.getElementById('ambiguousList'),
-    modeRandom: document.getElementById('modeRandom'),
-    modePhrase: document.getElementById('modePhrase'),
-    toast: document.getElementById('toast')
+  var $ = function (id) { return document.getElementById(id); };
+
+  var ui = {
+    result: $('result'),
+    copy: $('copy'),
+    regen: $('regen'),
+    strengthText: $('strength-text'),
+    strengthBits: $('strength-bits'),
+    gauge: $('gauge'),
+    notice: $('notice'),
+    length: $('length'),
+    lengthValue: $('length-value'),
+    words: $('words'),
+    wordsValue: $('words-value'),
+    must: $('must'),
+    symbols: $('symbols'),
+    noAmbiguous: $('no-ambiguous'),
+    advToggle: $('adv-toggle'),
+    advPanel: $('adv-panel'),
+    toast: $('toast'),
+    types: {
+      upper: $('t-upper'),
+      lower: $('t-lower'),
+      number: $('t-number'),
+      symbol: $('t-symbol')
+    }
   };
 
-  /* ---------- 난수 유틸 (모듈로 편향 제거) ---------- */
-  var RANGE = 4294967296; // 2^32
+  /* ---------- 난수 ---------- */
+  var UINT32 = 4294967296;
 
   function randomInt(max) {
-    if (max <= 0) { throw new Error('max must be positive'); }
-    var limit = Math.floor(RANGE / max) * max;
+    var limit = Math.floor(UINT32 / max) * max;
     var buf = new Uint32Array(1);
-    var value;
+    var v;
     do {
       crypto.getRandomValues(buf);
-      value = buf[0];
-    } while (value >= limit);
-    return value % max;
+      v = buf[0];
+    } while (v >= limit);
+    return v % max;
   }
 
-  function pick(source) {
-    return source[randomInt(source.length)];
-  }
+  function pick(list) { return list[randomInt(list.length)]; }
 
   function shuffle(arr) {
     for (var i = arr.length - 1; i > 0; i--) {
       var j = randomInt(i + 1);
-      var tmp = arr[i];
-      arr[i] = arr[j];
-      arr[j] = tmp;
+      var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
     }
     return arr;
   }
 
-  /* ---------- 옵션 읽기 ---------- */
+  /* ---------- 옵션 ---------- */
+  function checked(name) {
+    return document.querySelector('input[name="' + name + '"]:checked');
+  }
+
   function readOptions() {
+    var sep = checked('sep');
+    var pos = checked('pos');
     return {
-      length: parseInt(el.length.value, 10),
-      mode: el.modePhrase.checked ? 'passphrase' : 'random',
-      upper: el.upper.checked,
-      lower: el.lower.checked,
-      number: el.number.checked,
-      symbol: el.symbol.checked,
-      exclude: el.exclude.checked
+      mode: checked('mode').value,
+      length: parseInt(ui.length.value, 10),
+      wordCount: parseInt(ui.words.value, 10),
+      separator: sep ? sep.value : '-',
+      must: ui.must.value.trim(),
+      position: pos ? pos.value : 'start',
+      noAmbiguous: ui.noAmbiguous.checked,
+      symbols: ui.symbols.value,
+      use: {
+        upper: ui.types.upper.checked,
+        lower: ui.types.lower.checked,
+        number: ui.types.number.checked,
+        symbol: ui.types.symbol.checked
+      }
     };
   }
 
-  function filterAmbiguous(chars, exclude) {
-    if (!exclude) { return chars; }
+  function strip(chars, on) {
+    if (!on) { return chars; }
     return chars.split('').filter(function (c) {
       return AMBIGUOUS.indexOf(c) === -1;
     }).join('');
   }
 
-  function activePools(opts) {
-    var pools = [];
-    ['upper', 'lower', 'number', 'symbol'].forEach(function (key) {
-      if (!opts[key]) { return; }
-      var chars = filterAmbiguous(CHARSETS[key], opts.exclude);
-      if (chars.length > 0) { pools.push(chars); }
+  // 특수기호 풀: 중복/공백/영숫자 제거
+  function symbolPool(raw, noAmbiguous) {
+    var seen = {};
+    var out = '';
+    raw.split('').forEach(function (c) {
+      if (/[\sA-Za-z0-9]/.test(c) || seen[c]) { return; }
+      seen[c] = true;
+      out += c;
     });
-    return pools;
+    return strip(out, noAmbiguous);
   }
 
-  /* ---------- 무작위 문자열 모드 ---------- */
-  function generateRandom(opts) {
-    var pools = activePools(opts);
+  // 선택된 문자 종류별 풀 목록
+  function pools(opts) {
+    var list = [];
+    ['upper', 'lower', 'number'].forEach(function (k) {
+      if (!opts.use[k]) { return; }
+      var s = strip(CHARSET[k], opts.noAmbiguous);
+      if (s) { list.push(s); }
+    });
+    if (opts.use.symbol) {
+      var sym = symbolPool(opts.symbols, opts.noAmbiguous);
+      if (sym) { list.push(sym); }
+    }
+    return list;
+  }
+
+  /* ---------- 필수 단어 삽입 ---------- */
+  function insertMust(parts, must, position) {
+    if (!must) { return parts; }
+    if (position === 'start') { parts.unshift(must); }
+    else if (position === 'end') { parts.push(must); }
+    else { parts.splice(randomInt(parts.length + 1), 0, must); }
+    return parts;
+  }
+
+  /* ---------- 생성 ---------- */
+  function generateRandom(opts, list) {
+    var randomLen = Math.max(0, opts.length - opts.must.length);
     var chars = [];
     var i;
 
-    // 선택한 유형이 최소 1자씩 반드시 포함되도록 먼저 채운다
-    for (i = 0; i < pools.length; i++) {
-      chars.push(pick(pools[i]));
+    // 선택한 종류가 최소 1자씩 포함되도록 먼저 채운다
+    for (i = 0; i < list.length && i < randomLen; i++) {
+      chars.push(pick(list[i]));
     }
 
-    var all = pools.join('');
-    for (i = chars.length; i < opts.length; i++) {
+    var all = list.join('');
+    for (i = chars.length; i < randomLen; i++) {
       chars.push(pick(all));
     }
 
-    return shuffle(chars).join('');
-  }
+    shuffle(chars);
 
-  /* ---------- 패스프레이즈 모드 ---------- */
-  // 길이 슬라이더 값을 단어 개수로 환산 (8~32자 -> 3~6단어)
-  function wordCountFor(length) {
-    if (length <= 13) { return 3; }
-    if (length <= 19) { return 4; }
-    if (length <= 25) { return 5; }
-    return 6;
-  }
-
-  function styleWord(word, opts) {
-    if (opts.upper && opts.lower) {
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    }
-    if (opts.upper) { return word.toUpperCase(); }
-    return word;
+    if (!opts.must) { return chars.join(''); }
+    if (opts.position === 'start') { return opts.must + chars.join(''); }
+    if (opts.position === 'end') { return chars.join('') + opts.must; }
+    var at = randomInt(chars.length + 1);
+    return chars.slice(0, at).join('') + opts.must + chars.slice(at).join('');
   }
 
   function generatePassphrase(opts) {
-    var count = wordCountFor(opts.length);
     var pool = WORDS.slice();
     var chosen = [];
-
-    // 같은 단어가 중복되지 않도록 비복원 추출
-    for (var i = 0; i < count; i++) {
-      var index = randomInt(pool.length);
-      chosen.push(styleWord(pool[index], opts));
-      pool.splice(index, 1);
+    for (var i = 0; i < opts.wordCount; i++) {
+      var idx = randomInt(pool.length);
+      chosen.push(pool[idx]);
+      pool.splice(idx, 1);
     }
-
-    var separators = filterAmbiguous('-_!@#$%&*+=', opts.exclude);
-    var separator = opts.symbol && separators.length > 0 ? pick(separators) : '-';
-    var phrase = chosen.join(separator);
-
-    if (opts.number) {
-      var digits = filterAmbiguous(CHARSETS.number, opts.exclude);
-      if (digits.length > 0) {
-        phrase += separator + pick(digits) + pick(digits);
-      }
-    }
-
-    return phrase;
+    return insertMust(chosen, opts.must, opts.position).join(opts.separator);
   }
 
-  /* ---------- 유효성 검사 ---------- */
-  function validate(opts) {
+  /* ---------- 강도 ---------- */
+  function entropyOf(opts, list) {
     if (opts.mode === 'passphrase') {
-      if (!opts.upper && !opts.lower) {
-        return '단어 조합 모드는 대문자 또는 소문자 중 하나 이상을 선택해야 합니다.';
-      }
-      return null;
+      return opts.wordCount * (Math.log(WORDS.length) / Math.LN2);
     }
-    if (activePools(opts).length === 0) {
-      return '포함할 문자를 한 가지 이상 선택해 주세요.';
-    }
-    return null;
+    var size = list.join('').length;
+    if (!size) { return 0; }
+    var randomLen = Math.max(0, opts.length - opts.must.length);
+    return randomLen * (Math.log(size) / Math.LN2);
   }
 
-  /* ---------- 화면 갱신 ---------- */
-  function setResult(text, isPlaceholder) {
-    el.result.textContent = text;
-    el.result.classList.toggle('is-placeholder', !!isPlaceholder);
+  function levelOf(bits) {
+    var found = LEVELS[0];
+    LEVELS.forEach(function (l) { if (bits >= l.min) { found = l; } });
+    return found;
   }
 
-  function generate() {
-    var opts = readOptions();
-    var error = validate(opts);
+  /* ---------- 렌더링 ---------- */
+  function setResult(text, empty) {
+    ui.result.textContent = text;
+    ui.result.classList.toggle('is-empty', !!empty);
+  }
 
-    el.warning.hidden = !error;
-    el.warning.textContent = error || '';
-    el.genBtn.disabled = !!error;
-    el.copyBtn.disabled = !!error;
+  function setNotice(message) {
+    ui.notice.hidden = !message;
+    ui.notice.textContent = message || '';
+  }
 
-    if (error) {
-      setResult('설정을 확인해 주세요', true);
+  function setStrength(bits, disabled) {
+    if (disabled) {
+      ui.gauge.removeAttribute('data-level');
+      ui.strengthText.textContent = '—';
+      ui.strengthBits.textContent = '';
       return;
     }
-
-    setResult(opts.mode === 'passphrase' ? generatePassphrase(opts) : generateRandom(opts), false);
+    var lv = levelOf(bits);
+    ui.gauge.setAttribute('data-level', String(lv.level));
+    ui.strengthText.textContent = lv.name;
+    ui.strengthBits.textContent = '약 ' + Math.round(bits) + '비트';
   }
 
-  function syncLabels() {
-    var opts = readOptions();
-    el.lengthValue.textContent = opts.length + '자';
+  function syncSlider(input) {
+    var min = Number(input.min);
+    var pct = (Number(input.value) - min) / (Number(input.max) - min) * 100;
+    input.style.setProperty('--fill', pct + '%');
+  }
 
-    var isPhrase = opts.mode === 'passphrase';
-    el.lengthHint.hidden = !isPhrase;
-    if (isPhrase) {
-      el.lengthHint.textContent =
-        '단어 조합 모드에서는 길이에 맞춰 단어 ' + wordCountFor(opts.length) + '개를 사용합니다. ' +
-        '단어 자체는 읽기 쉬우므로 헷갈리는 문자 제외 옵션은 숫자와 구분 기호에만 적용됩니다.';
+  function syncMode(mode) {
+    document.querySelectorAll('[data-mode]').forEach(function (node) {
+      node.hidden = node.getAttribute('data-mode') !== mode;
+    });
+  }
+
+  /* ---------- 메인 ---------- */
+  function update(regenerate) {
+    var opts = readOptions();
+    var list = pools(opts);
+
+    syncMode(opts.mode);
+    ui.lengthValue.textContent = opts.length;
+    ui.wordsValue.textContent = opts.wordCount;
+    syncSlider(ui.length);
+    syncSlider(ui.words);
+
+    var notice = '';
+
+    if (opts.mode === 'random') {
+      if (!list.length) {
+        setResult('포함할 문자를 한 가지 이상 선택해 주세요', true);
+        setStrength(0, true);
+        setNotice(opts.use.symbol
+          ? '특수기호 목록이 비어 있습니다. 문자 종류를 선택하거나 기호를 입력해 주세요.'
+          : '');
+        ui.copy.disabled = true;
+        return;
+      }
+      if (opts.use.symbol && !symbolPool(opts.symbols, opts.noAmbiguous)) {
+        notice = '특수기호 목록이 비어 있어 특수기호 없이 생성합니다.';
+      }
+      if (opts.must.length >= opts.length) {
+        notice = '필수 단어가 설정한 길이보다 길어 무작위 문자가 추가되지 않습니다.';
+      }
+    } else if (opts.noAmbiguous) {
+      notice = '헷갈리는 문자 제외는 무작위 문자 모드에만 적용됩니다.';
+    }
+
+    ui.copy.disabled = false;
+    setNotice(notice);
+    setStrength(entropyOf(opts, list), false);
+
+    if (regenerate !== false) {
+      setResult(opts.mode === 'passphrase'
+        ? generatePassphrase(opts)
+        : generateRandom(opts, list), false);
     }
   }
 
   /* ---------- 토스트 ---------- */
   var toastTimer = null;
 
-  function showToast(message, isError) {
-    el.toast.textContent = message;
-    el.toast.classList.toggle('is-error', !!isError);
-    el.toast.classList.add('is-visible');
-
+  function toast(message, isError) {
+    ui.toast.textContent = message;
+    ui.toast.classList.toggle('is-error', !!isError);
+    ui.toast.classList.add('is-visible');
     if (toastTimer) { clearTimeout(toastTimer); }
     toastTimer = setTimeout(function () {
-      el.toast.classList.remove('is-visible');
+      ui.toast.classList.remove('is-visible');
       toastTimer = null;
     }, 2000);
   }
 
-  /* ---------- 클립보드 복사 ---------- */
+  /* ---------- 복사 ---------- */
   function legacyCopy(text) {
     var area = document.createElement('textarea');
     area.value = text;
     area.setAttribute('readonly', '');
-    area.style.position = 'fixed';
-    area.style.top = '-1000px';
-    area.style.opacity = '0';
+    area.style.cssText = 'position:fixed;top:-1000px;opacity:0';
     document.body.appendChild(area);
     area.select();
     area.setSelectionRange(0, text.length);
-
     var ok = false;
-    try {
-      ok = document.execCommand('copy');
-    } catch (e) {
-      ok = false;
-    }
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
     document.body.removeChild(area);
     return ok;
   }
 
+  function flashCopied() {
+    ui.copy.classList.add('is-done');
+    setTimeout(function () { ui.copy.classList.remove('is-done'); }, 1200);
+  }
+
   function copyResult() {
-    var text = el.result.textContent;
-    if (!text || el.result.classList.contains('is-placeholder')) { return; }
+    var text = ui.result.textContent;
+    if (!text || ui.result.classList.contains('is-empty')) { return; }
 
     function fallback() {
       if (legacyCopy(text)) {
-        showToast('복사되었습니다', false);
+        flashCopied();
+        toast('복사되었습니다');
       } else {
-        showToast('복사에 실패했습니다. 직접 선택해 복사해 주세요', true);
+        toast('복사에 실패했습니다. 직접 선택해 복사해 주세요', true);
       }
     }
 
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(text).then(function () {
-        showToast('복사되었습니다', false);
+        flashCopied();
+        toast('복사되었습니다');
       }).catch(fallback);
       return;
     }
-
     fallback();
   }
 
-  /* ---------- 초기화 ---------- */
-  el.ambiguousList.textContent = AMBIGUOUS.split('').join(' ');
+  /* ---------- 이벤트 ---------- */
+  ui.copy.addEventListener('click', copyResult);
 
-  el.genBtn.addEventListener('click', generate);
-  el.copyBtn.addEventListener('click', copyResult);
-
-  el.length.addEventListener('input', function () {
-    syncLabels();
-    generate();
+  ui.regen.addEventListener('click', function () {
+    ui.regen.classList.remove('is-spin');
+    void ui.regen.offsetWidth; // 애니메이션 재시작
+    ui.regen.classList.add('is-spin');
+    update(true);
   });
 
-  [el.upper, el.lower, el.number, el.symbol, el.exclude, el.modeRandom, el.modePhrase]
-    .forEach(function (input) {
-      input.addEventListener('change', function () {
-        syncLabels();
-        generate();
-      });
-    });
+  ui.advToggle.addEventListener('click', function () {
+    var open = ui.advToggle.getAttribute('aria-expanded') === 'true';
+    ui.advToggle.setAttribute('aria-expanded', String(!open));
+    ui.advPanel.classList.toggle('is-open', !open);
+  });
 
-  syncLabels();
-  generate();
+  // 슬라이더는 드래그 중 게이지만 갱신하고, 값이 확정되면 다시 생성
+  [ui.length, ui.words].forEach(function (slider) {
+    slider.addEventListener('input', function () {
+      syncSlider(slider);
+      update(false);
+    });
+    slider.addEventListener('change', function () { update(true); });
+  });
+
+  // 텍스트 입력은 타이핑 중 재생성하지 않고 강도만 갱신
+  [ui.must, ui.symbols].forEach(function (input) {
+    input.addEventListener('input', function () { update(false); });
+    input.addEventListener('change', function () { update(true); });
+  });
+
+  document.querySelectorAll(
+    'input[name="mode"], input[name="sep"], input[name="pos"], .pills input[type="checkbox"], #no-ambiguous'
+  ).forEach(function (input) {
+    input.addEventListener('change', function () { update(true); });
+  });
+
+  /* ---------- 시작 ---------- */
+  syncMode('random');
+  update(true);
 })();
